@@ -1,5 +1,15 @@
 const BADGE_CLASS = "rt-audience-overlay-badge";
-const CARD_SELECTOR = ".title-card img[alt], .slider-refocus img[alt], .jawBoneContainer img[alt]";
+const CARD_SELECTOR = [
+  ".title-card img[alt]",
+  ".title-card-container img[alt]",
+  ".slider-refocus img[alt]",
+  ".jawBoneContainer img[alt]",
+  ".boxart-container img[alt]",
+  "[data-uia='title-card'] img[alt]",
+  ".title-card[aria-label]",
+  ".slider-refocus[aria-label]"
+].join(", ");
+const DEBUG = false;
 const observedTitles = new Set();
 
 injectStyles();
@@ -20,7 +30,7 @@ function injectStyles() {
       position: absolute;
       top: 6px;
       left: 6px;
-      z-index: 3;
+      z-index: 4;
       background: rgba(0, 0, 0, 0.82);
       color: #ffffff;
       border-radius: 999px;
@@ -38,9 +48,10 @@ function injectStyles() {
 
 function scanAndDecorate() {
   const cards = document.querySelectorAll(CARD_SELECTOR);
+  log(`scan found ${cards.length} candidate cards`);
 
-  cards.forEach((img) => {
-    const title = cleanTitle(img.getAttribute("alt") || "");
+  cards.forEach((node) => {
+    const title = titleFromNode(node);
     if (!title || observedTitles.has(title)) {
       return;
     }
@@ -48,7 +59,18 @@ function scanAndDecorate() {
     observedTitles.add(title);
 
     chrome.runtime.sendMessage({ type: "getAudienceScore", title }, (response) => {
-      if (chrome.runtime.lastError || !response?.ok || !response.result) {
+      if (chrome.runtime.lastError) {
+        log("runtime error", chrome.runtime.lastError.message);
+        return;
+      }
+
+      if (!response?.ok) {
+        log("lookup response error", title, response?.error);
+        return;
+      }
+
+      if (!response.result) {
+        log("no result for", title);
         return;
       }
 
@@ -59,14 +81,15 @@ function scanAndDecorate() {
 
 function applyBadgesForTitle(title, result) {
   const cards = document.querySelectorAll(CARD_SELECTOR);
+  let applied = 0;
 
-  cards.forEach((img) => {
-    const currentTitle = cleanTitle(img.getAttribute("alt") || "");
+  cards.forEach((node) => {
+    const currentTitle = titleFromNode(node);
     if (currentTitle !== title) {
       return;
     }
 
-    const container = img.closest(".title-card-container, .slider-refocus, .jawBone") || img.parentElement;
+    const container = badgeContainer(node);
     if (!container) {
       return;
     }
@@ -84,13 +107,30 @@ function applyBadgesForTitle(title, result) {
     badge.textContent = `${stateIcon(result.state)} ${result.score}%`;
     badge.title = `Rotten Tomatoes audience score from ${result.sourceUrl}`;
     container.appendChild(badge);
+    applied += 1;
   });
+
+  log(`applied ${applied} badge(s) for ${title}`);
+}
+
+function titleFromNode(node) {
+  const raw = node.getAttribute("alt") || node.getAttribute("aria-label") || "";
+  return cleanTitle(raw);
+}
+
+function badgeContainer(node) {
+  return (
+    node.closest(
+      ".title-card-container, .title-card, .slider-refocus, .jawBone, .boxart-container, [data-uia='title-card']"
+    ) || node.parentElement
+  );
 }
 
 function cleanTitle(title) {
   return title
     .replace(/\s+/g, " ")
     .replace(/:\s*Season\s*\d+/i, "")
+    .replace(/^Watch\s+/i, "")
     .trim();
 }
 
@@ -100,4 +140,12 @@ function stateIcon(state) {
   }
 
   return "👥";
+}
+
+function log(...parts) {
+  if (!DEBUG) {
+    return;
+  }
+
+  console.log("[RT Overlay CS]", ...parts);
 }

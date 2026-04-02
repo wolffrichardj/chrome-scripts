@@ -1,4 +1,5 @@
 const cache = new Map();
+const DEBUG = false;
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "getAudienceScore" || !message.title) {
@@ -7,7 +8,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   getAudienceScore(message.title)
     .then((result) => sendResponse({ ok: true, result }))
-    .catch((error) => sendResponse({ ok: false, error: error.message }));
+    .catch((error) => {
+      log("lookup failed", message.title, error.message);
+      sendResponse({ ok: false, error: error.message });
+    });
 
   return true;
 });
@@ -32,6 +36,7 @@ async function getAudienceScore(rawTitle) {
 
 async function lookupAudienceScore(title) {
   const slugs = buildSlugCandidates(title);
+  log("trying title", title, slugs);
 
   for (const slug of slugs) {
     const movieResult = await fetchAudienceScore(`https://www.rottentomatoes.com/m/${slug}`);
@@ -51,23 +56,33 @@ async function lookupAudienceScore(title) {
 async function fetchAudienceScore(url) {
   const response = await fetch(url, { credentials: "omit" });
   if (!response.ok) {
+    log("non-ok response", url, response.status);
     return null;
   }
 
   const html = await response.text();
 
-  const scoreMatch = html.match(/audiencescore="(\d+)"/i);
+  const scoreMatch =
+    html.match(/audiencescore="(\d+)"/i) ||
+    html.match(/"audienceScore"\s*:\s*"?(\d+)"?/i) ||
+    html.match(/"audience_score"\s*:\s*"?(\d+)"?/i);
   if (!scoreMatch) {
+    log("score not found", url);
     return null;
   }
 
-  const stateMatch = html.match(/audiencestate="([a-z]+)"/i);
+  const stateMatch =
+    html.match(/audiencestate="([a-z]+)"/i) ||
+    html.match(/"audienceState"\s*:\s*"([a-z]+)"/i) ||
+    html.match(/"audience_state"\s*:\s*"([a-z]+)"/i);
 
-  return {
+  const parsed = {
     score: Number(scoreMatch[1]),
     state: stateMatch?.[1] || "unknown",
     sourceUrl: url
   };
+  log("match", parsed);
+  return parsed;
 }
 
 function normalizeTitle(rawTitle) {
@@ -93,15 +108,21 @@ function buildSlugCandidates(title) {
   }
 
   const base = words.join("_");
-  const candidates = new Set([base]);
+  const hyphen = words.join("-");
+  const candidates = new Set([base, hyphen]);
 
-  if (words[0] === "the" && words.length > 1) {
+  if ((words[0] === "the" || words[0] === "a" || words[0] === "an") && words.length > 1) {
     candidates.add(words.slice(1).join("_"));
-  }
-
-  if (words[0] === "a" && words.length > 1) {
-    candidates.add(words.slice(1).join("_"));
+    candidates.add(words.slice(1).join("-"));
   }
 
   return [...candidates];
+}
+
+function log(...parts) {
+  if (!DEBUG) {
+    return;
+  }
+
+  console.log("[RT Overlay SW]", ...parts);
 }
