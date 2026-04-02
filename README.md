@@ -19,7 +19,11 @@ chrome-scripts/
 │   ├── github/
 │   │   └── README.md
 │   └── netflix/
-│       └── README.md
+│       ├── README.md
+│       └── rt-audience-overlay/
+│           ├── background.js
+│           ├── content.js
+│           └── manifest.json
 └── extensions/
     ├── custom-graphics/
     │   └── README.md
@@ -34,7 +38,7 @@ chrome-scripts/
 4. Update the relevant module README with setup/testing notes.
 
 ## Initial roadmap
-- [ ] Netflix overlays (visual annotations and timeline graphics).
+- [x] Netflix overlays (Rotten Tomatoes audience badge overlay extension).
 - [ ] GitHub productivity overlays (PR/review activity indicators).
 - [ ] Shared metrics stitching utility for combining browser-side signals.
 - [ ] Packaging path for Tampermonkey scripts and Chrome extension builds.
